@@ -1,0 +1,396 @@
+---
+title: "Untitled"
+author: "group"
+date: "2023-08-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+
+```{r adding longitude and latitude to original q2 2023}
+#everytime it runs the google map api it is a bit different , therefore to standardise will be using the data i have gathered.
+
+# library(ggmap)
+# 
+# # Set your Google Maps API key
+# register_google(key = "AIzaSyB16nCCqlF8mNbU2XUmbJrY_AcghwExlVg")
+# 
+# # Read addresses from the CSV file
+# address_data <- read.csv("LowEeron_data2023.csv")
+# 
+# # Convert the 'month' column to character
+# address_data$month <- as.character(address_data$month)
+# 
+# # Filter data for months 4, 5, and 6
+# filtered_data <- address_data[address_data$month >= "2023-04" & address_data$month <= "2023-06", ]
+# 
+# # Initialize empty vectors to store latitudes and longitudes
+# latitudes <- numeric()
+# longitudes <- numeric()
+# 
+# # Iterate through each row and geocode the address
+# for (i in seq_len(nrow(filtered_data))) {
+#   block <- filtered_data$block[i]
+#   street <- filtered_data$street[i]
+#   address <- paste(block, street)
+# 
+#   result <- geocode(address)
+#   if (!is.na(result$lat) && !is.na(result$lon)) {
+#     latitudes <- c(latitudes, result$lat)
+#     longitudes <- c(longitudes, result$lon)
+#   } else {
+#     latitudes <- c(latitudes, NA)
+#     longitudes <- c(longitudes, NA)
+#   }
+# }
+# 
+# # Add latitudes and longitudes to the filtered data
+# filtered_data$Latitude <- latitudes
+# filtered_data$Longitude <- longitudes
+# 
+# # Save the filtered data with latitudes and longitudes
+# write.csv(filtered_data, file = "LowEeron_filtered_geocoded_data.csv", row.names = FALSE)
+# 
+# cat("Geocoding and filtering completed. Filtered data saved to LowEeron_filtered_geocoded_data.csv.\n")
+
+
+```
+
+
+```{r getting parks}
+
+library(sf)
+
+# Read KML data
+kml_data <- st_read("LowEeron_Parks.kml")
+
+# Extract coordinates
+coordinates <- st_coordinates(kml_data)
+
+# Optional: Save coordinates to a CSV file
+write.csv(coordinates, file = "LowEeron_parks.csv", row.names = FALSE)
+
+cat("Coordinates extracted and saved to coordinates.csv.\n")
+
+
+```
+
+
+```{r getting hawker}
+library(sf)
+
+# Read KML data
+kml_data <- st_read("LowEeron_HawkerCentresKML.kml")
+
+# Extract coordinates
+coordinates <- st_coordinates(kml_data)
+
+# Optional: Save coordinates to a CSV file
+write.csv(coordinates, file = "LowEeron_Hawker.csv", row.names = FALSE)
+
+cat("Coordinates extracted and saved to coordinates.csv.\n")
+```
+
+
+```{r adding hawker}
+# Load necessary libraries
+library(dplyr)
+library(geosphere)
+
+# Read the CSV data
+data <- read.csv("LowEeron_filtered_geocoded_data.csv")  # Replace 'your_data.csv' with your actual data file name
+hawker_data <- read.csv("LowEeron_Hawker.csv")  # Replace 'hawker_data.csv' with the Hawker data file name
+
+# Remove rows with negative longitude and latitude
+data <- data %>%
+  filter(Longitude >= 0, Latitude >= 0)
+
+# Extract Hawker coordinates
+hawker_coords <- hawker_data[, c("X", "Y")]
+
+# Create a new column for closest distance
+data <- data %>%
+  mutate(hawker_closest_distance = 0.0,
+         num_hawker_1km = 0) 
+
+for (i in 1:nrow(data)) {
+  flat_coords <- c(data[i, "Longitude"], data[i, "Latitude"])
+  distances <- distVincentySphere(flat_coords, hawker_coords)
+  min_distance <- min(distances) / 1000  # Convert meters to kilometers
+  data[i, "hawker_closest_distance"] <- min_distance
+  
+  # Count Hawker locations within 1km
+  num_hawker_within_1km <- sum(distances <= 1000)  # Check distances <= 1000 meters (1km)
+  data[i, "num_hawker_1km"] <- num_hawker_within_1km
+}
+
+# Save the updated data to a new CSV file
+write.csv(data, "LowEeron_updated_data.csv", row.names = FALSE)
+```
+
+```{r adding mrt}
+# Load necessary libraries
+library(dplyr)
+library(geosphere)
+
+# Read the CSV data
+data <- read.csv("LowEeron_updated_data.csv")  # Replace with the actual updated data file name
+mrt_data <- read.csv("LowEeron_mrt.csv")  # Replace with the MRT data file name
+
+# Extract MRT coordinates
+mrt_coords <- mrt_data[, c("Longitude", "Latitude")]
+
+# Create new columns for closest MRT distance and number of MRT locations within 2km
+data <- data %>%
+  mutate(mrt_closest_dist = 0.0,
+         num_mrt_1km = 0)  # Initialize the new columns
+
+# Calculate closest MRT distance and count MRT locations within 1km
+for (i in 1:nrow(data)) {
+  flat_coords <- c(data[i, "Longitude"], data[i, "Latitude"])
+  distances <- distVincentySphere(flat_coords, mrt_coords)
+  min_distance <- min(distances) / 1000  # Convert meters to kilometers
+  data[i, "mrt_closest_dist"] <- min_distance
+  
+  # Count MRT locations within 2km
+  num_mrt_within_1km <- sum(distances <= 1000)  # Check distances <= 1000 meters (1km)
+  data[i, "num_mrt_1km"] <- num_mrt_within_1km
+}
+
+# Save the updated data to a new CSV file
+write.csv(data, "LowEeron_updated_data.csv", row.names = FALSE)
+
+```
+
+```{r adding park}
+# Load necessary libraries
+library(dplyr)
+library(geosphere)
+
+# Read the CSV data
+data <- read.csv("LowEeron_updated_data.csv")  # Replace with the actual updated data file name
+park_data <- read.csv("LowEeron_parks.csv")  # Replace with the park data file name
+
+# Extract park coordinates
+park_coords <- park_data[, c("X", "Y")]
+
+# Create new columns for closest park distance and number of park locations within 2km
+data <- data %>%
+  mutate(park_closest_dist = 0.0,
+         num_park_1km = 0)  # Initialize the new columns
+
+# Calculate closest park distance and count park locations within 1km
+for (i in 1:nrow(data)) {
+  flat_coords <- c(data[i, "Longitude"], data[i, "Latitude"])
+  distances <- distVincentySphere(flat_coords, park_coords)
+  min_distance <- min(distances) / 1000  # Convert meters to kilometers
+  data[i, "park_closest_dist"] <- min_distance
+  
+  # Count park locations within 2km
+  num_park_within_1km <- sum(distances <= 1000)  # Check distances <= 1000 meters (1km)
+  data[i, "num_park_1km"] <- num_park_within_1km
+}
+
+# Save the updated data to a new CSV file
+write.csv(data, "LowEeron_updated_data.csv", row.names = FALSE)
+
+```
+
+```{r adding coordinates to school}
+#everytime it runs the google map api it is a bit different , therefore to standardise will be using the data i have gathered.
+
+# # # Load necessary libraries
+#  library(ggmap)
+# 
+# # Set your Google Maps API key
+# register_google(key = "AIzaSyB16nCCqlF8mNbU2XUmbJrY_AcghwExlVg")
+# 
+# # Read the CSV data
+# school_data <- read.csv("LowEeron_school.csv")
+# 
+# # Define a function to geocode postal codes to latitude and longitude using ggmap
+#  geocode_postal <- function(postal_code) {
+#   geo_data <- geocode(postal_code)
+#   return(geo_data)
+# }
+# 
+# # Create new columns for latitude and longitude
+# school_data$Latitude <- NA
+# school_data$Longitude <- NA
+# 
+# # Iterate through each row and geocode the postal code
+# for (i in 1:nrow(school_data)) {
+#   postal_code <- as.character(school_data[i, "postal_code"])
+#   if (!is.na(postal_code)) {
+#     geo_data <- geocode_postal(postal_code)
+#     school_data[i, "Latitude"] <- geo_data$lat
+#     school_data[i, "Longitude"] <- geo_data$lon
+#   }
+# }
+# 
+# # Save the geocoded data to a new CSV file
+# write.csv(school_data, "LowEeron_school_with_coords.csv", row.names = FALSE)
+# 
+# cat("Geocoding completed. Geocoded data saved to school_with_coords.csv.\n")
+
+```
+
+```{r adding school}
+# Load necessary libraries
+library(dplyr)
+library(geosphere)
+
+# Read the CSV data
+data <- read.csv("LowEeron_updated_data.csv")  # Replace with the actual updated data file name
+school_data <- read.csv("LowEeron_school_with_coords.csv")  # Replace with the school data file name
+
+# Extract school coordinates
+school_coords <- na.omit(school_data[, c("Longitude", "Latitude")])
+
+# Create new columns for closest school distance and number of school locations within 2km
+data <- data %>%
+  mutate(sch_closest_dist = 0.0,
+         num_sch_2km = 0)  # Initialize the new columns
+
+# Calculate closest school distance and count school locations within 2km
+for (i in 1:nrow(data)) {
+  flat_coords <- c(data[i, "Longitude"], data[i, "Latitude"])
+  distances <- distVincentySphere(flat_coords, school_coords)
+  min_distance <- min(distances) / 1000  # Convert meters to kilometers
+  data[i, "sch_closest_dist"] <- min_distance
+  
+  # Count school locations within 2km
+  num_sch_within_2km <- sum(distances <= 2000)  # Check distances <= 2000 meters (2km)
+  data[i, "num_sch_2km"] <- num_sch_within_2km
+}
+
+# Save the updated data to a new CSV file
+write.csv(data, "LowEeron_updated_data.csv", row.names = FALSE)
+
+```
+
+```{r adding shoppingmall}
+# Load necessary libraries
+library(dplyr)
+library(geosphere)
+
+# Read the CSV data
+data <- read.csv("LowEeron_updated_data.csv")  # Replace with the actual updated data file name
+shoppingmall_data <- read.csv("LowEeron_shoppingmall.csv")  # Replace with the shopping mall data file name
+
+# Extract shopping mall coordinates and drop rows with NA values
+shoppingmall_coords <- na.omit(shoppingmall_data[, c("LONGITUDE", "LATITUDE")])
+
+# Create new columns for closest shopping mall distance and number of shopping malls within 2km
+data <- data %>%
+  mutate(shoppingmall_closest_dist = 0.0,
+         num_shoppingmall_1km = 0)  # Initialize the new columns
+
+# Calculate closest shopping mall distance and count shopping malls within 1km
+for (i in 1:nrow(data)) {
+  flat_coords <- c(data[i, "Longitude"], data[i, "Latitude"])
+  distances <- distVincentySphere(flat_coords, shoppingmall_coords)
+  min_distance <- min(distances) / 1000  # Convert meters to kilometers
+  data[i, "shoppingmall_closest_dist"] <- min_distance
+  
+  # Count shopping malls within 2km
+  num_shoppingmall_within_1km <- sum(distances <= 1000)  # Check distances <= 1000 meters (2km)
+  data[i, "num_shoppingmall_1km"] <- num_shoppingmall_within_1km
+}
+
+# Save the updated data to a new CSV file
+write.csv(data, "LowEeron_updated_data.csv", row.names = FALSE)
+
+cat("Processing completed. Updated data saved to updated_data.csv.\n")
+
+```
+
+
+```{r adding coordinates to supermarket}
+#everytime it runs the google map api it is a bit different , therefore to standardise will be using the data i have gathered.
+
+
+# supermarket_data <- read.csv("LowEeron_supermarket.csv")  # Replace with the actual supermarket data file name
+# 
+# # Extract postal codes using regular expressions
+# postal_codes <- gsub(".*S\\((\\d+)\\).*", "\\1", supermarket_data$premise_address)
+# 
+# # Create a new column for postal codes in the supermarket data
+# supermarket_data$PostalCode <- postal_codes
+# 
+# # Set your Google Maps API key
+# register_google(key = "AIzaSyB16nCCqlF8mNbU2XUmbJrY_AcghwExlVg")
+# 
+# # Define a function to geocode postal codes to latitude and longitude using ggmap
+# geocode_postal <- function(postal_code) {
+#   geo_data <- geocode(postal_code)
+#   return(geo_data)
+# }
+# 
+# # Create new columns for latitude and longitude
+# supermarket_data$Latitude <- NA
+# supermarket_data$Longitude <- NA
+# 
+# # Iterate through each row and geocode the postal code
+# for (i in 1:nrow(supermarket_data)) {
+#   postal_code <- as.character(supermarket_data[i, "PostalCode"])
+#   if (!is.na(postal_code)) {
+#     geo_data <- geocode_postal(postal_code)
+#     supermarket_data[i, "Latitude"] <- geo_data$lat
+#     supermarket_data[i, "Longitude"] <- geo_data$lon
+#   }
+# }
+# 
+# # Save the updated supermarket data to a new CSV file
+# write.csv(supermarket_data, "LowEeron_supermarket_with_coords.csv", row.names = FALSE)
+# 
+# cat("Processing completed. Supermarket data with postal codes saved to supermarket_with_postal.csv.\n")
+
+```
+
+```{r adding supermarket}
+# Load necessary libraries
+library(dplyr)
+library(geosphere)
+
+# Read the CSV data
+data <- read.csv("LowEeron_updated_data.csv")  # Replace with the actual updated data file name
+supermarket_data <- read.csv("LowEeron_supermarket_with_coords.csv")  # Replace with the supermarket data file name
+
+# Extract supermarket coordinates and drop rows with NA values
+supermarket_coords <- na.omit(supermarket_data[, c("Longitude", "Latitude")])
+
+# Create new columns for closest supermarket distance and number of supermarkets within 2km
+data <- data %>%
+  mutate(supermarket_closest_dist = 0.0,
+         num_supermarket_1km = 0)  # Initialize the new columns
+
+# Calculate closest supermarket distance and count supermarkets within 2km
+for (i in 1:nrow(data)) {
+  flat_coords <- c(data[i, "Longitude"], data[i, "Latitude"])
+  distances <- distVincentySphere(flat_coords, supermarket_coords)
+  min_distance <- min(distances) / 1000  # Convert meters to kilometers
+  data[i, "supermarket_closest_dist"] <- min_distance
+  
+  # Count supermarkets within 1km
+  num_supermarket_within_1km <- sum(distances <= 1000)  # Check distances <= 1000 meters (1km)
+  data[i, "num_supermarket_1km"] <- num_supermarket_within_1km
+}
+
+# Save the updated data to a new CSV file
+write.csv(data, "LowEeron_updated_data.csv", row.names = FALSE)
+
+cat("Processing completed. Updated data saved to LowEeron_updated_data.csv.\n")
+
+```
+
+

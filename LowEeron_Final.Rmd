@@ -1,0 +1,922 @@
+---
+title: "Analysis"
+author: "group"
+date: "2023-09-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r data cleaning}
+# Read data
+library(tidyverse)
+data <- read_csv('LowEeron_updated_data.csv',show_col_types = FALSE)
+# Data cleaning:
+# 1. Drop specified columns
+# 2. Remove rows where flat_model is "2-room"
+# 3. Remove rows where distances are greater than 4km for all towns
+cleaned_data <- data %>%
+  select(-block, -street_name, -month, -lease_commence_date, -Latitude, -Longitude) %>%
+  filter(flat_model != "2-room") %>%
+  filter(hawker_closest_distance <= 4 & 
+         mrt_closest_dist <= 4 &
+         park_closest_dist <= 4 &
+         sch_closest_dist <= 4 &
+         shoppingmall_closest_dist <= 4 &
+         supermarket_closest_dist <= 4)
+
+# Save the cleaned data to a new CSV file
+write.csv(cleaned_data, "LowEeron_final.csv", row.names = FALSE)
+```
+
+
+```{r preliminary analysis}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+
+# Read data
+data <- read.csv("LowEeron_final.csv")
+
+# Create a function to obtain the summary statistics
+summary_stats <- function(column) {
+  c(Min = min(column, na.rm = TRUE),
+    Median = median(column, na.rm = TRUE),
+    Mean = mean(column, na.rm = TRUE),
+    Max = max(column, na.rm = TRUE),
+    '1st Qu.' = quantile(column, 0.25, na.rm = TRUE),
+    '3rd Qu.' = quantile(column, 0.75, na.rm = TRUE))
+}
+
+# Apply the function to each column of interest
+summaries <- data.frame(
+  t(sapply(data[, c("hawker_closest_distance", 
+                    "num_hawker_1km", 
+                    "mrt_closest_dist", 
+                    "num_mrt_1km", 
+                    "park_closest_dist", 
+                    "num_park_1km", 
+                    "sch_closest_dist", 
+                    "num_sch_2km", 
+                    "shoppingmall_closest_dist", 
+                    "num_shoppingmall_1km", 
+                    "supermarket_closest_dist", 
+                    "num_supermarket_1km")], summary_stats))
+)
+
+# View the summary table
+print(summaries)
+
+# Convert the data frame to a grid table
+grid_table <- tableGrob(summaries)
+
+# Save the table as an image
+ggsave(filename = "LowEeron_summary_table.png", plot = grid_table, width = 20, height = 8)
+
+
+# Calculate the average distances by town in meters for all amenities
+avg_dist_by_town <- data %>%
+  group_by(town) %>%
+  summarise(
+    avg_dist_hawker = mean(hawker_closest_distance, na.rm = TRUE),
+    avg_dist_mrt = mean(mrt_closest_dist, na.rm = TRUE),
+    avg_dist_park = mean(park_closest_dist, na.rm = TRUE),
+    avg_dist_sch = mean(sch_closest_dist, na.rm = TRUE),
+    avg_dist_shoppingmall = mean(shoppingmall_closest_dist, na.rm = TRUE),
+    avg_dist_supermarket = mean(supermarket_closest_dist, na.rm = TRUE)
+  )
+
+# Convert data to long format for plotting
+avg_dist_long <- avg_dist_by_town %>%
+  pivot_longer(cols = starts_with("avg_dist"), 
+               names_to = "amenity", 
+               values_to = "avg_distance") %>%
+  mutate(amenity = recode(amenity, 
+                          avg_dist_hawker = "Hawker Center", 
+                          avg_dist_mrt = "MRT Station", 
+                          avg_dist_park = "Park",
+                          avg_dist_sch = "School",
+                          avg_dist_shoppingmall = "Shopping Mall",
+                          avg_dist_supermarket = "Supermarket"))
+
+g <- ggplot(avg_dist_long, aes(x = town, y = avg_distance, fill = amenity)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +  # Adjust bar width and dodge width
+  labs(
+    title = "Average Distance to Amenities by Town",
+    y = "Average Distance (in km)",
+    x = "Town",
+    fill = "Amenity"
+  ) +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 0))
+
+ggsave("LowEeron_avg_distance_plot_spaced_amenities.png", plot = g, width = 10, height = 12)  # Adjusted height to accommodate spacing
+
+# Calculate the average number of facilities by town for all amenities
+avg_num_by_town <- data %>%
+  group_by(town) %>%
+  summarise(
+    avg_num_hawker = mean(num_hawker_1km, na.rm = TRUE),
+    avg_num_mrt = mean(num_mrt_1km, na.rm = TRUE),
+    avg_num_park = mean(num_park_1km, na.rm = TRUE),
+    avg_num_sch = mean(num_sch_2km, na.rm = TRUE),  # Note that schools use a 2km radius
+    avg_num_shoppingmall = mean(num_shoppingmall_1km, na.rm = TRUE),
+    avg_num_supermarket = mean(num_supermarket_1km, na.rm = TRUE)
+  )
+
+# Convert data to long format for plotting
+avg_num_long <- avg_num_by_town %>%
+  pivot_longer(cols = starts_with("avg_num"), 
+               names_to = "amenity", 
+               values_to = "avg_number") %>%
+  mutate(amenity = recode(amenity, 
+                          avg_num_hawker = "Hawker Center", 
+                          avg_num_mrt = "MRT Station", 
+                          avg_num_park = "Park",
+                          avg_num_sch = "School",
+                          avg_num_shoppingmall = "Shopping Mall",
+                          avg_num_supermarket = "Supermarket"))
+
+# Create the plot with increased space between bars
+g <- ggplot(avg_num_long, aes(x = town, y = avg_number, fill = amenity)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+  labs(
+    title = "Average Number of Facilities by Town",
+    y = "Average Number of Facilities",
+    x = "Town",
+    fill = "Amenity"
+  ) +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 0))
+
+ggsave("LowEeron_avg_number_plot_spaced_amenities.png", plot = g, width = 10, height = 12)  # Adjusted height for spacing
+
+```
+
+
+```{r unsupervised app with map }
+library(shiny)
+library(caret)  # For one-hot encoding
+library(tidyverse)
+library(fpc)
+library(leaflet)  # Added for map integration
+
+# Read data
+data <- read.csv("LowEeron_updated_data.csv")
+
+# Extract years
+data$years <- as.numeric(gsub(" years.*", "", data$remaining_lease))
+
+# Extract months
+data$months <- 0
+data$months[grep("month", data$remaining_lease)] <- as.numeric(gsub(".*years ", "", gsub(" month.*", "", data$remaining_lease[grep("month", data$remaining_lease)])))
+
+
+ui <- fluidPage(
+  titlePanel("Housing Recommendations"),
+  
+  # Row for Selection and Map
+  fluidRow(
+    # Left Panel for Selection
+    column(2,
+      checkboxGroupInput("selected_parameters", "Select Parameters:", 
+                         choices = c("MRT", "Park", "School", "Supermarket", "Shopping Mall", "Hawker Center", "Town", "Flat Type", "Storey Range", "Flat Model", "Floor Area", "Remaining Lease"),
+                         selected = "MRT"),
+      
+      radioButtons("clustering_method", "Select Clustering Method:", 
+                   choices = c("K-means Clustering", "Hierarchical Clustering", "DBSCAN"),
+                   selected = "K-means Clustering"),
+      
+    numericInput("k_clusters", "Number of Clusters:", value = 2, min = 1, max = 10000, step = 1),
+
+      conditionalPanel(
+        condition = "input.clustering_method == 'DBSCAN'",
+        numericInput("dbscan_eps", "EPS (Max Distance):", value = 0.5, min = 0, max = 10, step = 0.1),
+        numericInput("dbscan_minPts", "Min Points:", value = 5, min = 1, max = 100, step = 1)
+      ),
+      # Numeric inputs for distances
+      conditionalPanel(
+        condition = "'MRT' %in% input.selected_parameters",
+        numericInput("mrt_distance", "At most MRT Distance (km):", value = 1, min = 0, max = 10, step = 0.1),
+        numericInput("min_num_mrts", "Minimum Number of MRT Stations (1Km) radius:", value = 1, min = 0, max = 10, step = 1)
+      ),
+      conditionalPanel(
+        condition = "'Park' %in% input.selected_parameters",
+        numericInput("park_distance", "At most Park Distance (km):", value = 1, min = 0, max = 10, step = 0.1),
+        numericInput("min_num_parks", "Minimum Number of Parks (1Km) radius:", value = 1, min = 0, max = 10, step = 1)
+      ),
+      conditionalPanel(
+        condition = "'School' %in% input.selected_parameters",
+        numericInput("school_distance", "At most School Distance (km):", value = 1, min = 0, max = 10, step = 0.1),
+        numericInput("min_num_schools", "Minimum Number of Schools (2Km) radius:", value = 1, min = 0, max = 10, step = 1)
+      ),
+      conditionalPanel(
+        condition = "'Supermarket' %in% input.selected_parameters",
+        numericInput("supermarket_distance", "At most Supermarket Distance (km):", value = 1, min = 0, max = 10, step = 0.1),
+        numericInput("min_num_supermarkets", "Minimum Number of Supermarkets (1Km) radius:", value = 1, min = 0, max = 10, step = 1)
+      ),
+      conditionalPanel(
+        condition = "'Shopping Mall' %in% input.selected_parameters",
+        numericInput("shoppingmall_distance", "At most Shopping Mall Distance (km):", value = 1, min = 0, max = 10, step = 0.1),
+        numericInput("min_num_shoppingmalls", "Minimum Number of Shopping Malls (1Km) radius:", value = 1, min = 0, max = 10, step = 1)
+      ),
+      conditionalPanel(
+        condition = "'Hawker Center' %in% input.selected_parameters",
+        numericInput("hawker_distance", "At most Hawker Center Distance (km):", value = 1, min = 0, max = 10, step = 0.1),
+        numericInput("min_num_hawkers", "Minimum Number of Hawker Centers (1Km) radius:", value = 1, min = 0, max = 10, step = 1)
+      ),
+      
+      # Price filter
+      checkboxInput("apply_price_filter", "Apply Price Filter", value = FALSE),
+      conditionalPanel(
+        condition = "input.apply_price_filter == true",
+        numericInput("min_price", "Minimum Price:", value = 200000, min = 0, max = 2000000, step = 10000),
+        numericInput("max_price", "Maximum Price:", value = 1000000, min = 0, max = 2000000, step = 10000)
+      ),
+
+ # Conditional input for floor_area_sqm based on checkbox
+      conditionalPanel(
+        condition = "'Floor Area' %in% input.selected_parameters",
+        sliderInput("floor_area_sqm_range", "Floor Area (sqm):", min = min(data$floor_area_sqm), max = max(data$floor_area_sqm), value = c(min(data$floor_area_sqm), max(data$floor_area_sqm)))
+      ),
+      
+      # Conditional inputs for remaining_lease based on checkbox
+      conditionalPanel(
+        condition = "'Remaining Lease' %in% input.selected_parameters",
+        numericInput("remaining_lease_years", "Remaining Lease (years):", value = max(data$years), min = min(data$years), max = max(data$years)),
+        numericInput("remaining_lease_months", "Remaining Lease (months):", value = 0, min = 0, max = 11)
+      ),
+      
+      # Dropdowns for categorical features
+      conditionalPanel(
+        condition = "'Town' %in% input.selected_parameters",
+        selectInput("town", "Select Town:", choices = unique(data$town))
+      ),
+      conditionalPanel(
+        condition = "'Flat Type' %in% input.selected_parameters",
+        selectInput("flat_type", "Select Flat Type:", choices = unique(data$flat_type))
+      ),
+      conditionalPanel(
+        condition = "'Storey Range' %in% input.selected_parameters",
+        selectInput("storey_range", "Select Storey Range:", choices = unique(data$storey_range))
+      ),
+      conditionalPanel(
+        condition = "'Flat Model' %in% input.selected_parameters",
+        selectInput("flat_model", "Select Flat Model:", choices = unique(data$flat_model))
+      ),
+
+    condition = "'MRT' %in% input.selected_parameters || 'Park' %in% input.selected_parameters || 'School' %in% input.selected_parameters || 'Supermarket' %in% input.selected_parameters || 'Shopping Mall' %in% input.selected_parameters || 'Hawker Center' %in% input.selected_parameters",
+selectInput("numeric_criterion", "Select Numeric Criterion for Recommendation:",
+            choices = c("At most MRT Distance" = "mrt_closest_dist",
+                        "Minimum Number of MRT Stations" = "num_mrt_1km",
+                        "At most Park Distance" = "park_closest_dist",
+                        "Minimum Number of Parks" = "num_park_1km",
+                        "At most School Distance" = "sch_closest_dist",
+                        "Minimum Number of Schools" = "num_sch_2km",
+                        "At most Supermarket Distance" = "supermarket_closest_dist",
+                        "Minimum Number of Supermarkets" = "num_supermarket_1km",
+                        "At most Shopping Mall Distance" = "shoppingmall_closest_dist",
+                        "Minimum Number of Shopping Malls" = "num_shoppingmall_1km",
+                        "At most Hawker Center Distance" = "hawker_closest_distance",
+                        "Minimum Number of Hawker Centers" = "num_hawker_1km",
+                        "Minimum Mean Resale Price" = "resale_price_mean"),
+            selected = "mrt_closest_dist")
+  ),
+
+    # Right Panel for Map
+    column(10,
+      tableOutput("filtered_data")
+    ),
+  
+  # Below Panel for Recommendations
+  fluidRow(
+    column(12,
+      leafletOutput("map", height = "600px")
+    )
+  )
+)
+)
+
+server <- function(input, output, session) {
+  recommendation_data <- reactive({
+    filtered_data <- data
+    
+    # Filter based on selected parameters and their corresponding inputs
+    if ("MRT" %in% input$selected_parameters) {
+      filtered_data <- filtered_data[filtered_data$mrt_closest_dist <= input$mrt_distance, ]
+      if (nrow(filtered_data) == 0) return("No data after MRT filter")
+    }
+
+    if ("Park" %in% input$selected_parameters) {
+      filtered_data <- filtered_data[filtered_data$park_closest_dist <= input$park_distance, ]
+      if (nrow(filtered_data) == 0) return("No data after Park filter")
+    }
+    
+    if ("School" %in% input$selected_parameters) {
+      filtered_data <- filtered_data[filtered_data$sch_closest_dist <= input$school_distance, ]
+      if (nrow(filtered_data) == 0) return("No data after School filter")
+    }
+
+    if ("Supermarket" %in% input$selected_parameters) {
+      filtered_data <- filtered_data[filtered_data$supermarket_closest_dist <= input$supermarket_distance, ]
+      if (nrow(filtered_data) == 0) return("No data after Supermarket filter")
+    }
+
+    if ("Shopping Mall" %in% input$selected_parameters) {
+      filtered_data <- filtered_data[filtered_data$shoppingmall_closest_dist <= input$shoppingmall_distance, ]
+      if (nrow(filtered_data) == 0) return("No data after Shopping Mall filter")
+    }
+
+    if ("Hawker Center" %in% input$selected_parameters) {
+      filtered_data <- filtered_data[filtered_data$hawker_closest_dist <= input$hawker_distance, ]
+      if (nrow(filtered_data) == 0) return("No data after Hawker Center filter")
+    }
+    
+    # Filter by price range ONLY if "apply_price_filter" is TRUE
+    if (input$apply_price_filter) {
+      filtered_data <- filtered_data[filtered_data$resale_price >= input$min_price & filtered_data$resale_price <= input$max_price, ]
+      if (nrow(filtered_data) == 0) return("No data after price filter")
+    }
+    
+    # Filter based on floor_area_sqm
+    if ("Floor Area" %in% input$selected_parameters) {
+      filtered_data <- filtered_data[filtered_data$floor_area_sqm >= input$floor_area_sqm_range[1] & filtered_data$floor_area_sqm <= input$floor_area_sqm_range[2], ]
+      if (nrow(filtered_data) == 0) return("No data after Floor Area filter")
+    }
+
+    # Filter based on remaining_lease
+    if ("Remaining Lease" %in% input$selected_parameters) {
+      total_remaining_months <- input$remaining_lease_years * 12 + input$remaining_lease_months
+      data_remaining_months <- data$years * 12 + data$months
+      filtered_data <- filtered_data[data_remaining_months >= total_remaining_months, ]
+      if (nrow(filtered_data) == 0) return("No data after Remaining Lease filter")
+    }
+    
+    # Filter by Town, Flat Type, Storey Range, and Flat Model if they're selected
+    if ("Town" %in% input$selected_parameters) {
+      filtered_data <- filtered_data[filtered_data$town == input$town, ]
+      if (nrow(filtered_data) == 0) return("No data after Town filter")
+    }
+
+    if ("Flat Type" %in% input$selected_parameters) {
+      filtered_data <- filtered_data[filtered_data$flat_type == input$flat_type, ]
+      if (nrow(filtered_data) == 0) return("No data after Flat Type filter")
+    }
+
+    if ("Storey Range" %in% input$selected_parameters) {
+      filtered_data <- filtered_data[filtered_data$storey_range == input$storey_range, ]
+      if (nrow(filtered_data) == 0) return("No data after Storey Range filter")
+    }
+
+    if ("Flat Model" %in% input$selected_parameters) {
+      filtered_data <- filtered_data[filtered_data$flat_model == input$flat_model, ]
+      if (nrow(filtered_data) == 0) return("No data after Flat Model filter")
+    }
+
+    # Filtering by minimum amenities
+if ("MRT" %in% input$selected_parameters && !is.null(input$min_num_mrts)) {
+  filtered_data <- filtered_data[filtered_data$num_mrt_1km >= input$min_num_mrts, ]
+  if (nrow(filtered_data) == 0) return("No data after minimum MRT stations filter")
+}
+
+if ("Park" %in% input$selected_parameters && !is.null(input$min_num_parks)) {
+  filtered_data <- filtered_data[filtered_data$num_park_1km >= input$min_num_parks, ]
+  if (nrow(filtered_data) == 0) return("No data after minimum parks filter")
+}
+
+if ("Hawker Center" %in% input$selected_parameters && !is.null(input$min_num_hawkers)) {
+  filtered_data <- filtered_data[filtered_data$num_hawker_1km >= input$min_num_hawkers, ]
+  if (nrow(filtered_data) == 0) return("No data after minimum hawker centers filter")
+}
+
+if ("Supermarket" %in% input$selected_parameters && !is.null(input$min_num_supermarkets)) {
+  filtered_data <- filtered_data[filtered_data$num_supermarket_1km >= input$min_num_supermarkets, ]
+  if (nrow(filtered_data) == 0) return("No data after minimum supermarkets filter")
+}
+
+if ("Shopping Mall" %in% input$selected_parameters && !is.null(input$min_num_shoppingmalls)) {
+  filtered_data <- filtered_data[filtered_data$num_shoppingmall_1km >= input$min_num_shoppingmalls, ]
+  if (nrow(filtered_data) == 0) return("No data after minimum shopping malls filter")
+}
+
+# Similarly add conditions for other amenities like schools
+if ("School" %in% input$selected_parameters && !is.null(input$min_num_schools)) {
+  filtered_data <- filtered_data[filtered_data$num_sch_2km >= input$min_num_schools, ]
+  if (nrow(filtered_data) == 0) return("No data after minimum schools filter")
+}
+
+# ... Add conditions for additional amenities as needed
+
+   # Define the function to determine if the criterion is based on minimizing or maximizing
+    should_pick_min <- function(criterion) {
+      min_based_criteria <- c("mrt_closest_dist", "park_closest_dist", "sch_closest_dist", 
+                              "supermarket_closest_dist", "shoppingmall_closest_dist", 
+                              "hawker_closest_distance", "resale_price_mean")
+      return(criterion %in% min_based_criteria)
+    }
+    
+    
+# Mapping between user input and the actual dataset variable name
+user_to_data_map <- list("Town" = "town", 
+                         "Flat Type" = "flat_type", 
+                         "Storey Range" = "storey_range", 
+                         "Flat Model" = "flat_model")
+
+selected_features <- c("town", "flat_type", "storey_range", "flat_model")  # default features
+
+# Check each feature; if it has only one unique value, exclude it from encoding
+for (feature in selected_features) {
+  if (length(unique(filtered_data[[feature]])) == 1) {
+    selected_features <- setdiff(selected_features, feature)
+  }
+}
+
+# Convert the vector of features to a formula
+formula <- as.formula(paste("~", paste(selected_features, collapse = " + "), "- 1"))
+
+# Encode the features
+encoded_features <- model.matrix(formula, filtered_data)
+
+    numeric_features <- filtered_data %>%
+      dplyr::select(
+        floor_area_sqm,
+        resale_price,
+        years, 
+        num_hawker_1km,
+        mrt_closest_dist,
+        hawker_closest_distance,
+        shoppingmall_closest_dist,
+        park_closest_dist,
+        sch_closest_dist,
+        supermarket_closest_dist,
+        num_supermarket_1km,
+        num_mrt_1km,
+        num_sch_2km,
+        num_park_1km,
+        num_shoppingmall_1km,
+        months
+      )
+    scaled_numeric_features <- scale(numeric_features)
+    combined_features <- cbind(encoded_features, scaled_numeric_features)
+    
+    # Check for NA, NaN, or Inf values and remove corresponding rows
+    combined_features <- combined_features[!apply(is.na(combined_features) | is.infinite(combined_features), 1, any),]
+    
+# Apply the clustering methods
+    if(input$clustering_method == "K-means Clustering") {
+      set.seed(123)
+      clustering_model <- kmeans(combined_features, centers = input$k_clusters)
+      
+      # Add additional logic for the mean resale price
+      if(input$numeric_criterion == "resale_price_mean") {
+        cluster_means <- tapply(filtered_data$resale_price, clustering_model$cluster, mean)
+      } else {
+        cluster_means <- clustering_model$centers[, input$numeric_criterion]
+      }
+
+      # Decide the recommended cluster
+      if (should_pick_min(input$numeric_criterion)) {
+        recommended_cluster <- which.min(cluster_means)
+      } else {
+        recommended_cluster <- which.max(cluster_means)
+      }
+
+      recommendation <- filtered_data[clustering_model$cluster == recommended_cluster, ]
+          # Limit the recommendation to the top 45 rows
+    recommendation <- head(recommendation, 45)
+
+    } else if(input$clustering_method == "Hierarchical Clustering") {
+      hc <- hclust(dist(combined_features))
+      cluster_assignments <- cutree(hc, k = input$k_clusters)
+      
+      cluster_means <- tapply(filtered_data[[input$numeric_criterion]], cluster_assignments, mean)
+
+      if (should_pick_min(input$numeric_criterion)) {
+        recommended_cluster <- which.min(cluster_means)
+      } else {
+        recommended_cluster <- which.max(cluster_means)
+      }
+
+      recommendation <- filtered_data[cluster_assignments == recommended_cluster, ]
+      
+          # Limit the recommendation to the top 45 rows
+    recommendation <- head(recommendation, 45)
+
+    } else {
+      clustering_model <- dbscan(combined_features, eps = input$dbscan_eps, MinPts = input$dbscan_minPts)
+      cluster_means <- tapply(filtered_data[[input$numeric_criterion]][clustering_model$cluster != -1], 
+                              clustering_model$cluster[clustering_model$cluster != -1], 
+                              mean)
+
+      if (should_pick_min(input$numeric_criterion)) {
+        recommended_cluster <- which.min(cluster_means)
+      } else {
+        recommended_cluster <- which.max(cluster_means)
+      }
+
+      recommendation <- filtered_data[clustering_model$cluster == recommended_cluster, ]
+          # Limit the recommendation to the top 45 rows
+    recommendation <- head(recommendation, 45)
+    }
+
+    recommendation <- recommendation[order(recommendation$resale_price), ]
+    # Limit the recommendation to the top 45 rows
+    recommendation <- head(recommendation, 45)
+    
+    if (nrow(recommendation) == 0) return("No recommendation available")
+    
+    return(recommendation)
+  })
+output$filtered_data <- renderTable({
+    recommendation <- recommendation_data()
+    
+    if (nrow(recommendation) == 0) {
+        return("No recommendation available")
+    }
+    
+    # Add a 'row_number' column to the start of your dataframe
+    recommendation <- tibble::rowid_to_column(recommendation, "Row Number")
+    
+    return(recommendation)
+})
+
+  output$map <- renderLeaflet({
+    recommendation <- recommendation_data()
+
+    if (nrow(recommendation) == 0) {
+      return(leaflet() %>% setView(lat = 1.3521, lng = 103.8198, zoom = 12))  # Default view of Singapore
+    }
+    
+    m <- leaflet() %>%
+      addTiles() %>%  # This adds the base map
+      setView(lat = 1.3521, lng = 103.8198, zoom = 12)  # Centered on Singapore
+
+    # Add a new column to 'recommendation' that represents the row number
+    recommendation$row_number <- seq_len(nrow(recommendation))
+
+    # Use the 'popup' argument to display the row number along with any other info you want
+    popups <- sprintf(
+      "<strong>Row number:</strong> %s<br/><strong>Resale Price:</strong> %s", 
+      recommendation$row_number, 
+      recommendation$resale_price  # Add other details as needed
+    )
+
+    m <- addMarkers(
+      map = m, 
+      data = recommendation, 
+      lat = ~Latitude, 
+      lng = ~Longitude, 
+      popup = popups  # this argument accepts HTML content
+    )
+    
+    return(m)
+  })
+}
+
+shinyApp(ui, server)
+```
+
+
+```{r training and testing model}
+# Install and load necessary libraries
+library(tidyverse)
+library(lubridate)
+library(caret)
+library(randomForest)
+library(xgboost)
+library(e1071)
+library(ggplot2)
+library(gbm)
+library(glmnet)
+library(grid)
+
+# Load the dataset
+data <- read_csv('LowEeron_final.csv',show_col_types = FALSE)
+
+# Convert categorical variables
+data <- data %>%
+  mutate_at(vars(town, flat_type, flat_model, storey_range), as.factor)
+
+# Convert 'remaining_lease' into numeric (in terms of years)
+data$remaining_lease <- sapply(strsplit(as.character(data$remaining_lease), " "), function(x) {
+  years <- as.numeric(x[1])
+  if(length(x) > 2) {
+    months <- as.numeric(gsub("month.*", "", x[3])) / 12
+    return(years + months)
+  } else {
+    return(years)
+  }
+})
+
+# Split data into training and test sets
+set.seed(123)
+trainIndex <- createDataPartition(data$resale_price, p = 0.8, list = FALSE)
+train_data <- data[trainIndex,]
+test_data <- data[-trainIndex,]
+
+# Train Random Forest
+set.seed(123)
+rf_model <- randomForest(resale_price ~ ., data=train_data, ntree=50)
+
+# Train XGBoost
+xgb_data <- train_data %>%
+  mutate_if(is.character, as.numeric) %>%
+  mutate_if(is.factor, as.numeric)
+xgb_train <- xgb.DMatrix(data = as.matrix(xgb_data %>% select(-resale_price)), label = xgb_data$resale_price)
+set.seed(123)
+xgb_model <- xgboost(data = xgb_train, nrounds=100, objective="reg:squarederror")
+
+# Evaluate models on test set
+rf_predictions <- predict(rf_model, newdata = test_data)
+xgb_predictions <- predict(xgb_model, newdata = as.matrix(test_data %>% select(-resale_price) %>% mutate_if(is.character, as.numeric) %>% mutate_if(is.factor, as.numeric)))
+
+rf_rmse <- sqrt(mean((rf_predictions - test_data$resale_price)^2))
+xgb_rmse <- sqrt(mean((xgb_predictions - test_data$resale_price)^2))
+
+# SVM for regression
+set.seed(123)
+svm_model <- svm(resale_price ~ ., data=train_data, kernel="radial")
+svm_predictions <- predict(svm_model, newdata = test_data)
+svm_rmse <- sqrt(mean((svm_predictions - test_data$resale_price)^2))
+
+# 1. Gradient Boosting Machine (GBM)
+set.seed(123)
+gbm_model <- gbm(resale_price ~ ., data=train_data, distribution="gaussian", n.trees=100)
+gbm_predictions <- predict(gbm_model, newdata=test_data, n.trees=100)
+gbm_rmse <- sqrt(mean((gbm_predictions - test_data$resale_price)^2))
+
+# 2. LASSO Regression
+# First, we need to create a model matrix
+x_train <- model.matrix(resale_price ~ ., train_data)[,-1]
+y_train <- train_data$resale_price
+x_test <- model.matrix(resale_price ~ ., test_data)[,-1]
+lasso_model <- cv.glmnet(x_train, y_train, alpha=1)
+lasso_predictions <- predict(lasso_model, s=lasso_model$lambda.min, newx=x_test)
+lasso_rmse <- sqrt(mean((lasso_predictions - test_data$resale_price)^2))
+
+# 3. Ridge Regression
+ridge_model <- cv.glmnet(x_train, y_train, alpha=0)
+ridge_predictions <- predict(ridge_model, s=ridge_model$lambda.min, newx=x_test)
+ridge_rmse <- sqrt(mean((ridge_predictions - test_data$resale_price)^2))
+
+# Function to compute MAPE
+calculate_mape <- function(actual, predicted) {
+  return(mean(abs((actual - predicted) / actual)) * 100)
+}
+
+# Calculate MAPE for each model
+rf_mape <- calculate_mape(test_data$resale_price, rf_predictions)
+xgb_mape <- calculate_mape(test_data$resale_price, xgb_predictions)
+svm_mape <- calculate_mape(test_data$resale_price, svm_predictions)
+gbm_mape <- calculate_mape(test_data$resale_price, gbm_predictions)
+lasso_mape <- calculate_mape(test_data$resale_price, lasso_predictions)
+ridge_mape <- calculate_mape(test_data$resale_price, ridge_predictions)
+
+# Add MAPE to the comparison dataframe
+comparison_df <- tibble(
+  Model = c("Random Forest", "XGBoost", "SVM", "GBM", "LASSO", "Ridge"),
+  RMSE = c(rf_rmse, xgb_rmse, svm_rmse, gbm_rmse, lasso_rmse, ridge_rmse),
+  MAPE = c(rf_mape, xgb_mape, svm_mape, gbm_mape, lasso_mape, ridge_mape)
+)
+
+print(comparison_df)
+# Find the model with the lowest RMSE
+best_model <- comparison_df[which.min(comparison_df$RMSE), ]
+
+print(best_model)
+
+# Plotting RMSE comparison
+rmse_plot <- ggplot(comparison_df, aes(x = Model, y = RMSE)) +
+  geom_bar(stat = 'identity') +
+  coord_flip() +
+  labs(title = "RMSE Comparison across Models", x = "Models", y = "RMSE") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Save the RMSE plot
+ggsave(filename = "LowEeron_rmse_comparison_plot.png", plot = rmse_plot, width = 10, height = 6, bg = "white")
+
+# Plotting MAPE comparison
+mape_plot <- ggplot(comparison_df, aes(x = Model, y = MAPE)) +
+  geom_bar(stat = 'identity') +
+  coord_flip() +
+  labs(title = "MAPE Comparison across Models", x = "Models", y = "MAPE (%)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Save the MAPE plot
+ggsave(filename = "LowEeron_mape_comparison_plot.png", plot = mape_plot, width = 10, height = 6, bg = "white")
+
+
+# Extract feature importance
+rf_importance_matrix <- importance(rf_model)
+
+# Create a data frame for feature importance using IncNodePurity
+rf_importance <- data.frame(Feature = rownames(rf_importance_matrix), Importance = rf_importance_matrix[, "IncNodePurity"])
+
+# Sort the importance data in descending order for better visualization
+rf_importance <- rf_importance %>%
+  arrange(desc(Importance))
+
+rf_plot <- ggplot(rf_importance, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = 'identity') +
+  coord_flip() +
+  labs(title = "Feature Importance from Random Forest", x = "Features", y = "Importance (IncNodePurity)") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 12))  # Increase text size
+
+# Save the plot with a white background
+ggsave("LowEeron_rf_feature_importance.png", plot = rf_plot, width = 10, height = 12, bg = "white")
+
+
+# Extract feature importance
+xgb_importance <- xgb.importance(model = xgb_model)
+
+# Saving the XGBoost feature importance plot
+png(filename = "LowEeron_xgb_feature_importance.png", width = 800, height = 600)
+xgb.plot.importance(xgb_importance, rel_to_first = TRUE)
+title("Feature Importance (XGBoost)")
+dev.off()
+
+```
+
+
+```{r mannually predicting}
+
+predict_resale_price <- function(town, flat_type, flat_model, storey_range,
+                                 floor_area_sqm, remaining_lease, 
+                                 hawker_closest_distance, num_hawker_1km, 
+                                 mrt_closest_dist, num_mrt_1km, 
+                                 park_closest_dist, num_park_1km, 
+                                 sch_closest_dist, num_sch_2km, 
+                                 shoppingmall_closest_dist, num_shoppingmall_1km, 
+                                 supermarket_closest_dist, num_supermarket_1km) {
+  # Convert input parameters to a data frame
+  input_data <- as.data.frame(list(town = town, flat_type = flat_type, 
+                                   flat_model = flat_model, storey_range = storey_range,
+                                   floor_area_sqm = floor_area_sqm, remaining_lease = remaining_lease,
+                                   hawker_closest_distance = hawker_closest_distance, 
+                                   num_hawker_1km = num_hawker_1km,
+                                   mrt_closest_dist = mrt_closest_dist, num_mrt_1km = num_mrt_1km,
+                                   park_closest_dist = park_closest_dist, num_park_1km = num_park_1km,
+                                   sch_closest_dist = sch_closest_dist, num_sch_2km = num_sch_2km,
+                                   shoppingmall_closest_dist = shoppingmall_closest_dist,
+                                   num_shoppingmall_1km = num_shoppingmall_1km,
+                                   supermarket_closest_dist = supermarket_closest_dist,
+                                   num_supermarket_1km = num_supermarket_1km))
+
+  # Convert categorical variables to factor
+  input_data <- input_data %>%
+    mutate_at(vars(town, flat_type, flat_model, storey_range), as.factor)
+
+  # Adjust the levels of the factors in input_data to match those in the original data
+input_data$town <- factor(input_data$town, levels = levels(data$town))
+input_data$flat_type <- factor(input_data$flat_type, levels = levels(data$flat_type))
+input_data$flat_model <- factor(input_data$flat_model, levels = levels(data$flat_model))
+input_data$storey_range <- factor(input_data$storey_range, levels = levels(data$storey_range))
+  
+
+# Convert the newdata for XGBoost prediction
+xgb_input_data <- input_data %>%
+  mutate_if(is.character, as.numeric) %>% 
+  mutate_if(is.factor, as.numeric)
+
+# Ensure that the column order matches the training data for XGBoost
+xgb_input_data <- xgb_input_data[, colnames(xgb_data %>% select(-resale_price))]
+
+ # Make predictions
+  rf_pred <- unname(predict(rf_model, newdata = input_data)) # Unname the prediction
+  xgb_pred <- predict(xgb_model, newdata = as.matrix(xgb_input_data))
+
+  # Calculate range
+  range_percentage <- 0.05
+  rf_range <- unname(c(rf_pred * (1 - range_percentage), rf_pred * (1 + range_percentage))) # Unname the range
+  xgb_range <- c(xgb_pred * (1 - range_percentage), xgb_pred * (1 + range_percentage))
+
+  return(list(
+    rf_prediction = rf_pred,
+    rf_range = rf_range,
+    xgb_prediction = xgb_pred,
+    xgb_range = xgb_range
+  ))
+}
+
+
+result <- predict_resale_price(
+    town = "ANG MO KIO",
+    flat_type = "2 ROOM",
+    flat_model = "Improved",
+    storey_range = "07 TO 09",
+    floor_area_sqm = 44,
+    remaining_lease = 58 + (1/12),  # 58 years and 1 month
+    hawker_closest_distance = 0.190276573,
+    num_hawker_1km = 9,
+    mrt_closest_dist = 0.999806365,
+    num_mrt_1km = 4,
+    park_closest_dist = 0.674068637,
+    num_park_1km = 23,
+    sch_closest_dist = 0.331308119,
+    num_sch_2km = 20,
+    shoppingmall_closest_dist = 1.001278194,
+    num_shoppingmall_1km = 6,
+    supermarket_closest_dist = 0.742326582,
+    num_supermarket_1km = 16
+)
+
+print(result)
+
+
+```
+
+#in order to run the shiny app , must run the training/testing model and the manual predicting chunks first before the chunk below 
+
+```{r supervised shinny app}
+library(shiny)
+library(shinyWidgets)
+library(tidyverse)
+
+# Define UI for application
+ui <- fluidPage(
+   
+   # Application title
+   titlePanel("Predict Resale Price"),
+   
+   # Sidebar with input elements
+   sidebarLayout(
+      sidebarPanel(
+         selectInput("town", "Town", choices = levels(data$town)),
+         selectInput("flat_type", "Flat Type", choices = levels(data$flat_type)),
+         selectInput("flat_model", "Flat Model", choices = levels(data$flat_model)),
+         selectInput("storey_range", "Storey Range", choices = levels(data$storey_range)),
+         numericInput("floor_area_sqm", "Floor Area (sqm)", 44),
+         numericInput("remaining_lease", "Remaining Lease (in years)", 58),
+         numericInput("hawker_closest_distance", "Closest Hawker Distance", 0.19),
+         numericInput("num_hawker_1km", "Number of Hawkers within 1km", 9),
+         numericInput("mrt_closest_dist", "Closest MRT Distance", 0.9998),
+         numericInput("num_mrt_1km", "Number of MRTs within 1km", 4),
+         numericInput("park_closest_dist", "Closest Park Distance", 0.674),
+         numericInput("num_park_1km", "Number of Parks within 1km", 23),
+         numericInput("sch_closest_dist", "Closest School Distance", 0.331),
+         numericInput("num_sch_2km", "Number of Schools within 2km", 20),
+         numericInput("shoppingmall_closest_dist", "Closest Shopping Mall Distance", 1.001),
+         numericInput("num_shoppingmall_1km", "Number of Shopping Malls within 1km", 6),
+         numericInput("supermarket_closest_dist", "Closest Supermarket Distance", 0.742),
+         numericInput("num_supermarket_1km", "Number of Supermarkets within 1km", 16),
+         actionButton("predict", "Predict")
+      ),
+      
+      # Main panel for displaying predictions
+      mainPanel(
+         h4("Random Forest Prediction"),
+         verbatimTextOutput("rf_prediction"),
+         h4("XGBoost Prediction"),
+         verbatimTextOutput("xgb_prediction")
+      )
+   )
+)
+
+# Define server logic 
+server <- function(input, output) {
+   
+   observeEvent(input$predict, {
+      result <- predict_resale_price(
+         town = input$town,
+         flat_type = input$flat_type,
+         flat_model = input$flat_model,
+         storey_range = input$storey_range,
+         floor_area_sqm = input$floor_area_sqm,
+         remaining_lease = input$remaining_lease,
+         hawker_closest_distance = input$hawker_closest_distance,
+         num_hawker_1km = input$num_hawker_1km,
+         mrt_closest_dist = input$mrt_closest_dist,
+         num_mrt_1km = input$num_mrt_1km,
+         park_closest_dist = input$park_closest_dist,
+         num_park_1km = input$num_park_1km,
+         sch_closest_dist = input$sch_closest_dist,
+         num_sch_2km = input$num_sch_2km,
+         shoppingmall_closest_dist = input$shoppingmall_closest_dist,
+         num_shoppingmall_1km = input$num_shoppingmall_1km,
+         supermarket_closest_dist = input$supermarket_closest_dist,
+         num_supermarket_1km = input$num_supermarket_1km
+      )
+      
+      output$rf_prediction <- renderPrint({
+         list(Prediction = result$rf_prediction, Range = result$rf_range)
+      })
+      
+      output$xgb_prediction <- renderPrint({
+         list(Prediction = result$xgb_prediction, Range = result$xgb_range)
+      })
+   })
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+
+```
+
+
